@@ -1,0 +1,218 @@
+import React from 'react';
+
+import {
+  Text,
+  View,
+  Button,
+  StyleSheet,
+  Dimensions,
+  Switch
+} from 'react-native';
+
+import BackgroundGeolocation from 'react-native-background-geolocation';
+
+
+const stateDevice = {
+  BLOCK_ON: 'block-on',
+  BLOCK_OFF: 'block-off',
+  TAKE_OFF: 'take-off',
+  TAKE_ON: 'take-on',
+  EMERGENCY: 'emergency'
+}
+
+const LATITUDE_DELTA = 0.00922;
+const LONGITUDE_DELTA = 0.00421;
+
+export default class GeolocationScreen extends React.Component{
+
+  state = {
+    enabled: false,
+    isMoving: false,
+    motionActivity: {
+      activity: stateDevice.BLOCK_ON,
+      confidence: 100
+    },
+    odometer: 0,
+    markers: [],
+    coordinates: [],
+    dataSource: [],
+    showsUserLocation: false,
+  }
+
+  componentDidMount(){
+
+    BackgroundGeolocation.on('location', this._onLocation.bind(this));
+    BackgroundGeolocation.on('motionchange', this._onMotionChange.bind(this));
+    BackgroundGeolocation.on('activitychange', this._onActivityChange.bind(this));
+
+    BackgroundGeolocation.ready({
+      desiredAccuracy: BackgroundGeolocation.DESIRED_ACCURACY_HIGH,
+      distanceFilter: 10,
+      stopTimeout: 1,
+      debug: true,
+      logLevel: BackgroundGeolocation.LOG_LEVEL_VERBOSE,
+      stopOnTerminate: false,
+      foregroundService: true,
+      startOnBoot: true,
+      batchSync: false,
+      autoSync: true
+    }, (state) => {
+      this.setState({
+        enabled: state.enabled,
+        isMoving: state.isMoving,
+        showsUserLocation: state.enabled
+      })
+    })
+  }
+
+  componentWillUnmount(){
+    this.setState({
+      enabled: false,
+      showsUserLocation: false
+    })
+  }
+
+  render(){
+    return(
+      <View style={styles.container}>
+        <View style={styles.headerOption}>
+          <Text>Geolocalizzazione</Text>
+          <Switch
+            value = {this.state.enabled}
+            trackColor = {{false:'#f00',true:'#0f0'}}
+            onValueChange={() => this._onToggleGPS()}
+          />
+          <Text>Avvia navigazione</Text>
+          <Button 
+            title="Block Off"
+            onPress={() => this._enableNavigation()}
+          />
+        </View>
+        <Text>Enable {this.state.enabled}</Text>
+        <Text></Text>
+      </View>
+    )
+  }
+
+  componentWillUnmount() {
+    BackgroundGeolocation.removeListeners();
+  }
+
+  /**
+   * @event location
+   */
+  _onLocation(location){
+    console.log(`location: ${location}`);
+  }
+
+  /**
+   * @event motionchange
+   */
+  _onMotionChange(event){
+    //console.log(`Evento: , event.isMoving,event.location´);
+    
+    this.setState({
+      isMoving: event.isMoving
+    });
+    
+    let location = event.location;
+    this.setState({dataSource: [...this.state.dataSource,location]})
+  }
+
+  /**
+   * @event activitychange
+   */
+  _onActivityChange(event){
+    this.setState({
+      motionActivity: event
+    });
+  }
+
+  _onToggleGPS(value){
+    let enabled = !this.state.enabled;
+
+    this.setState({
+      enabled: enabled,
+      isMoving: false,
+      showsUserLocation: false,
+    })
+
+    if(enabled){
+      BackgroundGeolocation.start( () => {
+        this.setState({
+          showsUserLocation: true
+        });
+      });
+    }
+    else{
+      BackgroundGeolocation.stop();
+    }  
+  }
+
+  _enableNavigation(){
+    let isMoving = !this.state.isMoving;
+    this.setState({isMoving: isMoving});
+    BackgroundGeolocation.changePace(isMoving);
+  }
+
+}
+
+  
+
+GeolocationScreen.navigationOptions = ({navigation}) => ({
+  headerTitle: 'Navigatore',
+    headerRight: (
+      <Button
+        onPress={() => navigation.navigate('Report')}
+        title="Report"
+      >
+      </Button>
+
+    ),
+});
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    justifyContent: 'flex-start',
+    alignItems: 'flex-start',
+    backgroundColor: '#0af'
+  },
+  headerOption: {
+    flexDirection: 'row',
+    height: Dimensions.get('window').height /10,
+    width: Dimensions.get('window').width,
+    justifyContent: 'flex-start',
+    backgroundColor: '#f90'
+  },
+  title: {
+    color: '#000'
+  },
+  footer: {
+    backgroundColor: '#f90',
+    paddingLeft: 10, 
+    paddingRight: 10
+  },
+  footerBody: {
+    justifyContent: 'center',
+    width: 200,
+    flex: 1
+  },
+  icon: {
+    color: '#fff'
+  },
+  map: {
+    height: Dimensions.get('window').height/2
+  },
+  status: {
+    fontSize: 12
+  },
+  markerIcon: {
+    borderWidth:1,
+    borderColor:'#000000',
+    backgroundColor: 'rgba(0,179,253, 0.6)',
+    width: 10,
+    height: 10,
+    borderRadius: 5
+  }
+});

@@ -1,0 +1,325 @@
+import React from 'react';
+import {
+  StyleSheet,
+  View, 
+  Dimensions,
+  FlatList
+} from 'react-native';
+
+import { 
+  Container,
+  Button, Icon,
+  Text,
+  Header, Footer, Title,
+  Content, 
+  Left, Body, Right,
+  Switch 
+} from 'native-base';
+
+import MapView from 'react-native-maps';
+
+import BackgroundGeolocation from 'react-native-background-geolocation';
+
+const LATITUDE_DELTA = 0.00922;
+const LONGITUDE_DELTA = 0.00421;
+
+const stateDevice = {
+  BLOCK_ON: 'BLOCK-ON', // aereo fermo
+  BLOCK_OFF: 'BLOCK-OFF', //aereo in partenza
+  TAKE_OFF: 'TAKE-OFF', // aereo in volo
+  TAKE_ON: 'TAKE-ON'  // aereo in atterraggio
+}
+
+export default class GeolocationScreen extends React.Component{
+
+  constructor(props) {
+    super(props);
+
+    this.state = {
+      enabled: false,
+      isMoving: false,
+      //motionActivity: {activity: stateDevice.BLOCK_ON, confidence: 100},
+      activity: stateDevice.BLOCK_ON,
+      odometer: 0,
+      // MapView
+      markers: [],
+      coordinates: [],
+      showsUserLocation: false,
+      coords: [],
+    };
+  }
+
+  componentDidMount() {
+
+    BackgroundGeolocation.on('location', this.onLocation.bind(this));
+    BackgroundGeolocation.on('motionchange', this.onMotionChange.bind(this));
+    BackgroundGeolocation.on('activitychange', this.onActivityChange.bind(this));
+
+    BackgroundGeolocation.ready({
+      reset: true,
+      stopTimeout: 1,
+      distanceFilter: 30,
+      autoSync: true,
+      stopOnTerminate: false,
+      startOnBoot: true,
+      foregroundService: true,
+      debug: true,
+      desiredAccuracy: BackgroundGeolocation.DESIRED_ACCURACY_HIGH,
+      logLevel: BackgroundGeolocation.LOG_LEVEL_VERBOSE,
+    }, (state) => {
+      this.setState({
+        enabled: state.enabled,
+        isMoving: state.isMoving,
+        showsUserLocation: state.enabled,
+      });      
+    });
+  }
+
+  /**
+  * @event location
+  */
+  onLocation(location) {
+    console.log('[event] location: ', location);
+
+    if (!location.sample) {
+
+      this.addMarker(location);
+
+      let coords = {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+        altitude: location.coords.altitude,
+        heading: location.coords.heading,
+        speed: location.coords.speed,
+        timestamp: location.timestamp
+      }
+
+      this.setState({
+        odometer: (location.odometer/1000).toFixed(1),
+        coords: [...this.state.coords,coords]
+      });
+    }
+  
+    this.setCenter(location);
+  }
+  /**
+  * @event motionchange
+  */
+  onMotionChange(event) {
+
+    let isMoving = event.isMoving;
+
+    if(!isMoving){
+      this.setState({
+        activity: stateDevice.TAKE_ON,
+      });
+    }else{
+      this.setState({
+        activity: stateDevice.TAKE_OFF,
+      });
+    }
+  }
+  /**
+  * @event activitychange
+  */
+  onActivityChange(event) {
+    //console.log('[event] activitychange: ', event);
+
+  }
+
+  addMarker(location) {
+    let marker = {
+      key: location.uuid,
+      title: location.timestamp,
+      heading: location.coords.heading,
+      coordinate: {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude
+      }
+    };
+
+    this.setState({
+      markers: [...this.state.markers, marker],
+      coordinates: [...this.state.coordinates, {
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude
+      }]
+    });
+  }
+
+  setCenter(location) {
+    if (!this.refs.map) { return; }
+
+    this.refs.map.animateToRegion({
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+      latitudeDelta: LATITUDE_DELTA,
+      longitudeDelta: LONGITUDE_DELTA
+    });
+  }
+
+  renderMarkers() {
+    let rs = [];
+    this.state.markers.map((marker) => {
+      rs.push((
+        <MapView.Marker
+          key={marker.key}
+          coordinate={marker.coordinate}
+          anchor={{x:0, y:0.1}}
+          title={marker.title}>
+          <View style={[styles.markerIcon]}></View>
+        </MapView.Marker>
+      ));
+    });
+    return rs;
+  }
+
+  startNavigation(){
+    let enabled = !this.state.enabled;
+
+    this.setState({
+      enabled: enabled,
+      showsUserLocation: false,
+      coordinates: [],
+      markers: []
+    });
+
+    if (enabled) {
+      BackgroundGeolocation.start((state) => {
+        this.setState({
+          showsUserLocation: true,
+          activity: stateDevice.BLOCK_OFF
+        });
+      });
+    } else {      
+      BackgroundGeolocation.stop();
+      this.setState({
+        activity: stateDevice.BLOCK_ON
+      });
+    }
+
+    let isMoving = !this.state.isMoving;
+
+    this.setState({isMoving: isMoving});
+    BackgroundGeolocation.changePace(isMoving);
+  }
+
+  render() {
+    return (
+      <Container style={styles.container}>
+
+        <MapView
+          ref="map"
+          style={styles.map}
+          showsUserLocation={this.state.showsUserLocation}
+          followsUserLocation={false}
+          scrollEnabled={true}
+          showsMyLocationButton={false}
+          showsPointsOfInterest={false}
+          showsScale={false}
+          showsTraffic={false}
+          toolbarEnabled={false}>
+          <MapView.Polyline
+            key="polyline"
+            coordinates={this.state.coordinates}
+            geodesic={true}
+            strokeColor='rgba(0,179,253, 0.6)'
+            strokeWidth={6}
+            zIndex={0}
+          />        
+          {this.state.markers.map((marker) => (
+            <MapView.Marker
+              key={marker.key}
+              coordinate={marker.coordinate}
+              anchor={{x:0, y:0.1}}
+              title={marker.title}>
+              <View style={[styles.markerIcon]}></View>
+            </MapView.Marker>))
+          }
+        </MapView>        
+
+        <Footer style={styles.footer}>
+          <Left style={{flex:0.3}}>
+            <Button danger={this.state.isMoving} success={!this.state.isMoving} onPress={this.startNavigation.bind(this)}>
+              <Icon active name={(this.state.enabled) ? 'pause' : 'play'} style={styles.icon}/>
+            </Button>
+          </Left>
+          <Body style={styles.footerBody}>
+            <Text style={styles.status}>
+              Stato attuale: {this.state.activity}
+            </Text>
+          </Body>
+
+          {/* <Right style={{flex: 0.25}}>
+            
+          </Right> */}
+        </Footer>
+
+        <View>
+          {this.renderCoords()}
+        </View>
+      </Container>
+    );
+  }
+
+  renderCoords() {
+    return this.state.coords.map(function(arr, i){
+      return(
+        <View key={i}>
+          <Text>Latitudine: {arr.latitude} Longitudine: {arr.longitude} Altitudine: {arr.altitude} Velocità {arr.speed} Timestamp{arr.timestamp}</Text>
+        </View>
+      );
+    });
+  }
+}
+
+GeolocationScreen.navigationOptions = ({navigation}) => ({
+  headerTitle: 'Geolocation',
+    /* headerRight: (
+      <Button
+        onPress={() => navigation.navigate('Report',{key: this.state.coords})}
+      >
+        <Text>Report</Text>
+      </Button>
+
+    ), */
+});
+
+const styles = StyleSheet.create({
+  container: {
+    backgroundColor: '#0af'
+  },
+  header: {
+    backgroundColor: '#f90'
+  },
+  title: {
+    color: '#000'
+  },
+  footer: {
+    backgroundColor: '#f90',
+    paddingLeft: 10, 
+    paddingRight: 10
+  },
+  footerBody: {
+    justifyContent: 'center',
+    width: 200,
+    flex: 1
+  },
+  icon: {
+    color: '#fff'
+  },
+  map: {
+    height: Dimensions.get('window').height/2
+  },
+  status: {
+    fontSize: 12
+  },
+  markerIcon: {
+    borderWidth:1,
+    borderColor:'#000000',
+    backgroundColor: 'rgba(0,179,253, 0.6)',
+    width: 10,
+    height: 10,
+    borderRadius: 5
+  }
+});
